@@ -9,7 +9,19 @@ import discord
 from discord import app_commands
 from discord.ext import commands, tasks
 
+from aiohttp import web
 
+async def handle_ping(request):
+    return web.Response(text="Bot is Alive!")
+
+async def start_web_server():
+    app = web.Application()
+    app.router.add_get('/', handle_ping)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    port = int(os.environ.get("PORT", 8080))
+    site = web.TCPSite(runner, '0.0.0.0', port)
+    await site.start()
 # =========================
 # CONFIG
 # =========================
@@ -297,6 +309,7 @@ async def before_monitor():
 
 @bot.event
 async def on_ready():
+    await start_web_server()
 
     try:
         synced = await bot.tree.sync()
