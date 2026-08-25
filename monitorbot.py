@@ -62,7 +62,7 @@ accounts = load_accounts()
 # DISCORD BOT
 # =========================
 
-intents = discord.Intents.default()
+intents = discord.Intents.all()
 
 bot = commands.Bot(
     command_prefix="!",
