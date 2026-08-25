@@ -75,25 +75,15 @@ bot = commands.Bot(
 # =========================
 
 async def check_public_profile(session, username):
-    """
-    Checks whether the public profile URL appears reachable.
-
-    200  -> AVAILABLE
-    404  -> UNAVAILABLE
-    403/429/etc -> UNKNOWN
-
-    IMPORTANT:
-    403/429 is NOT treated as an account removal.
-    """
-
     url = f"https://www.instagram.com/{username}/"
-
     headers = {
         "User-Agent": (
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
             "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/127.0 Safari/537.36"
-        )
+            "Chrome/127.0.0.0 Safari/537.36"
+        ),
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
     }
 
     try:
@@ -101,21 +91,22 @@ async def check_public_profile(session, username):
             url,
             headers=headers,
             timeout=aiohttp.ClientTimeout(total=15),
-            allow_redirects=True
+            allow_redirects=False
         ) as response:
-
-            if response.status == 200:
-                return "available"
 
             if response.status == 404:
                 return "unavailable"
 
-            # Never assume rate-limit/block is an account removal.
+            if response.status in (200, 302):
+                text = await response.text()
+                if "Sorry, this page isn't available" in text or "Page Not Found" in text:
+                    return "unavailable"
+                return "available"
+
             return "unknown"
 
     except asyncio.TimeoutError:
         return "unknown"
-
     except aiohttp.ClientError:
         return "unknown"
 
