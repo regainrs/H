@@ -115,64 +115,35 @@ async def check_public_profile(session, username):
 # EMBED
 # =========================
 
-def make_recovered_embed(username, started_at):
+def make_recovered_embed(username, started_at, followers="68"):
     now = datetime.now(timezone.utc)
-
-    elapsed = int(
-        now.timestamp() -
-        datetime.fromisoformat(started_at).timestamp()
-    )
-
+    elapsed = int(now.timestamp() - datetime.fromisoformat(started_at).timestamp())
+    
     hours = elapsed // 3600
     minutes = (elapsed % 3600) // 60
     seconds = elapsed % 60
+    
+    time_str = f"{seconds} seconds"
+    if hours > 0:
+        time_str = f"{hours}h {minutes}m {seconds}s"
+    elif minutes > 0:
+        time_str = f"{minutes}m {seconds}s"
 
-    embed = discord.Embed(
-        title=f"🏆 Account Recovered | @{username}",
-        color=discord.Color.green()
+        embed = discord.Embed(
+        title="Monitoring Status",
+        color=discord.Color.green(),
+        description=(
+            f"**[Instagram Account Recovered | @{username} 🏆✅](https://www.instagram.com/{username}/)**\n"
+            f"**Followers:** {followers}\n"
+            f"⏱ **Elapsed Time:** {time_str}"
+        )
     )
 
-    embed.add_field(
-        name="👥 Followers",
-        value="N/A",
-        inline=True
-    )
-
-    embed.add_field(
-        name="⏱️ Time",
-        value=f"{hours} hours, {minutes} minutes, {seconds} seconds",
-        inline=True
-    )
-
-    embed.add_field(
-        name="🔗 Profile",
-        value=f"https://www.instagram.com/{username}/",
-        inline=False
-    )
-
-    embed.add_field(
-        name="Started",
-        value=started_at.replace("+00:00", " UTC"),
-        inline=False
-    )
-
-    embed.add_field(
-        name="Available",
-        value=now.strftime("%Y-%m-%d %H:%M:%S UTC"),
-        inline=False
-    )
-
-    embed.add_field(
-        name="Status",
-        value="✅ Account is now active.",
-        inline=False
-    )
-
-    embed.set_footer(
-        text="Public availability monitor"
-    )
+    embed.set_image(url=f"https://www.instagram.com/{username}/embed")
 
     return embed
+
+
 
 
 # =========================
