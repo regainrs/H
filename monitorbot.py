@@ -300,19 +300,22 @@ async def watch(
     interaction: discord.Interaction,
     username: str
 ):
+    await interaction.response.defer()
 
     username = username.strip().lstrip("@")
 
     accounts[username] = {
         "channel_id": str(interaction.channel_id),
-        "status": "unknown",
-        "started_at": None
+        "status": "unavailable",
+        "started_at": datetime.now(timezone.utc).isoformat()
     }
 
     save_accounts(accounts)
 
-    await interaction.response.send_message(
-        f"👁️ Now monitoring **@{username}**.\n"
+    await interaction.followup.send(
+        f"👁 Now monitoring **@{username}**.\nChecks every 60 seconds."
+    )
+
         f"Checks every **{CHECK_INTERVAL} seconds**."
     )
 
@@ -403,6 +406,7 @@ async def list_accounts(
 async def test(
     interaction: discord.Interaction
 ):
+    await interaction.response.defer()
 
     username = "example"
 
@@ -421,7 +425,7 @@ async def test(
         started_at
     )
 
-    await interaction.response.send_message(
+    await interaction.followup.send(
         embed=embed
     )
 
