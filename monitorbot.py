@@ -2,12 +2,13 @@ import os
 import io
 import re
 import time
+import random
 import asyncio
 import sqlite3
 import logging
 import threading
 from datetime import datetime
-from typing import Optional, Dict, Any
+from typing import Optional
 
 import aiohttp
 import requests
@@ -22,12 +23,12 @@ logger = logging.getLogger("IG_Monitor")
 
 TOKEN = "MTU0MTYzOTc5MDM1NTU1NDM4Ng.GX7dmr.zFdWGcIHvtWNQ72gd_JUqmp2Xa-Y2AlU2XbvAg"
 
-# ----------------- FLASK KEEP-ALIVE SERVER -----------------
+# ----------------- KEEP-ALIVE SERVER -----------------
 app = Flask(__name__)
 
 @app.route("/")
 def home():
-    return "Regainrs Monitor Engine is Live 24/7."
+    return "MonitorHub Engine is Live 24/7."
 
 def run_flask():
     port = int(os.environ.get("PORT", 8080))
@@ -54,7 +55,8 @@ class Database:
                         target TEXT,
                         target_type TEXT,
                         alert_type TEXT,
-                        start_time REAL
+                        start_time REAL,
+                        target_delay REAL
                     )
                 """)
                 conn.commit()
@@ -63,11 +65,18 @@ class Database:
 
     def add_monitor(self, m_id, g_id, c_id, u_id, target, t_type, a_type):
         try:
+            # Dynamic humanized delay: 3s to 95s (never exceeds 2 mins)
+            chosen_delay = random.choice([
+                random.uniform(2, 6),     # Super fast (3-6s)
+                random.uniform(7, 14),    # Medium fast (7-14s)
+                random.uniform(18, 42),   # Standard (18-42s)
+                random.uniform(55, 95)    # Realistic deep scan (55-95s)
+            ])
             with self.get_conn() as conn:
                 conn.cursor().execute("""
-                    INSERT OR REPLACE INTO monitors (id, guild_id, channel_id, user_id, target, target_type, alert_type, start_time)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """, (m_id, g_id, c_id, u_id, target, t_type, a_type, time.time()))
+                    INSERT OR REPLACE INTO monitors (id, guild_id, channel_id, user_id, target, target_type, alert_type, start_time, target_delay)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (m_id, g_id, c_id, u_id, target, t_type, a_type, time.time(), chosen_delay))
                 conn.commit()
         except Exception as e:
             logger.error(f"DB Add Error: {e}")
@@ -83,12 +92,12 @@ class Database:
     def get_all(self):
         try:
             with self.get_conn() as conn:
-                rows = conn.cursor().execute("SELECT id, guild_id, channel_id, user_id, target, target_type, alert_type, start_time FROM monitors").fetchall()
+                rows = conn.cursor().execute("SELECT id, guild_id, channel_id, user_id, target, target_type, alert_type, start_time, target_delay FROM monitors").fetchall()
                 return [
                     {
                         "id": r[0], "guild_id": r[1], "channel_id": r[2], "user_id": r[3],
                         "target": r[4], "target_type": r[5], "alert_type": r[6],
-                        "start_time": r[7]
+                        "start_time": r[7], "target_delay": r[8] if r[8] is not None else 3.0
                     }
                     for r in rows
                 ]
@@ -105,52 +114,67 @@ class Database:
 
 db = Database()
 
-# ----------------- ENHANCED PROFILE CARD GENERATOR -----------------
+# ----------------- EXACT DARK INSTAGRAM CARD -----------------
 def generate_profile_card(username: str, posts: str, followers: str, following: str, avatar_url: Optional[str]) -> io.BytesIO:
-    width, height = 700, 190
-    image = Image.new("RGBA", (width, height), (20, 20, 20, 255))
+    width, height = 560, 160
+    image = Image.new("RGBA", (width, height), (0, 0, 0, 0))
     draw = ImageDraw.Draw(image)
 
-    # Avatar Fetching
+    # Pure Jet-Black Rounded Box
+    draw.rounded_rectangle([(0, 0), (width, height)], radius=24, fill=(0, 0, 0, 255))
+
+    font_user = font_stats = font_btn = font_dots = None
+    for path in ["/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", "Arial.ttf", "arial.ttf"]:
+        try:
+            font_user = ImageFont.truetype(path, 20)
+            font_stats = ImageFont.truetype(path, 15)
+            font_btn = ImageFont.truetype(path, 14)
+            font_dots = ImageFont.truetype(path, 18)
+            break
+        except Exception:
+            pass
+
+    if not font_user:
+        font_user = font_stats = font_btn = font_dots = ImageFont.load_default()
+
+    # HD Avatar Handling
+    avatar_size = 100
     avatar_img = None
     if avatar_url:
         try:
-            headers = {
-                "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15",
-                "Referer": "https://www.instagram.com/"
-            }
-            res = requests.get(avatar_url, headers=headers, timeout=6)
+            headers = {"User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X)"}
+            res = requests.get(avatar_url, headers=headers, timeout=5)
             if res.status_code == 200:
-                avatar_img = Image.open(io.BytesIO(res.content)).convert("RGBA").resize((120, 120))
-        except Exception as e:
-            logger.warning(f"Avatar fetch error: {e}")
+                avatar_img = Image.open(io.BytesIO(res.content)).convert("RGBA").resize((avatar_size, avatar_size), Image.Resampling.LANCZOS)
+        except Exception:
+            pass
 
     if not avatar_img:
-        avatar_img = Image.new("RGBA", (120, 120), (50, 50, 50, 255))
+        avatar_img = Image.new("RGBA", (avatar_size, avatar_size), (40, 40, 40, 255))
         draw_temp = ImageDraw.Draw(avatar_img)
-        draw_temp.ellipse((20, 20, 100, 100), fill=(100, 100, 100, 255))
+        draw_temp.ellipse((15, 15, avatar_size - 15, avatar_size - 15), fill=(90, 90, 90, 255))
 
-    mask = Image.new("L", (120, 120), 0)
+    mask = Image.new("L", (avatar_size, avatar_size), 0)
     mask_draw = ImageDraw.Draw(mask)
-    mask_draw.ellipse((0, 0, 120, 120), fill=255)
-    image.paste(avatar_img, (35, 35), mask)
+    mask_draw.ellipse((0, 0, avatar_size, avatar_size), fill=255)
+    image.paste(avatar_img, (30, 30), mask)
 
     # Top Row: Username + Follow + Menu
-    draw.text((180, 42), f"@{username}", fill=(255, 255, 255))
-    draw.rounded_rectangle([(360, 36), (445, 68)], radius=8, fill=(0, 149, 246))
-    draw.text((380, 44), "Follow", fill=(255, 255, 255))
-    draw.text((465, 42), "•••", fill=(210, 210, 210))
+    draw.text((150, 38), f"@{username}", fill=(255, 255, 255), font=font_user)
+    draw.rounded_rectangle([(320, 34), (395, 64)], radius=8, fill=(0, 149, 246))
+    draw.text((338, 40), "Follow", fill=(255, 255, 255), font=font_btn)
+    draw.text((415, 38), "•••", fill=(255, 255, 255), font=font_dots)
 
-    # Bottom Row: Real Stats (1 posts  0 followers  0 following)
-    stats_text = f"{posts} posts        {followers} followers        {following} following"
-    draw.text((180, 105), stats_text, fill=(230, 230, 230))
+    # Bottom Row: Real Stats Line
+    stats_text = f"{posts} posts       {followers} followers       {following} following"
+    draw.text((150, 95), stats_text, fill=(240, 240, 240), font=font_stats)
 
     output = io.BytesIO()
     image.save(output, format="PNG")
     output.seek(0)
     return output
 
-# ----------------- REALTIME INSTAGRAM SCRAPER -----------------
+# ----------------- REALTIME SCRAPER -----------------
 class FastInstagramScraper:
     HEADERS = {
         "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 Instagram 324.0.0.18.115",
@@ -160,16 +184,15 @@ class FastInstagramScraper:
     }
 
     WEB_HEADERS = {
-        "User-Agent": "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
         "Accept-Language": "en-US,en;q=0.9"
     }
 
     @staticmethod
     async def fetch_account(session: aiohttp.ClientSession, username: str):
-        # 1. Instagram Web Profile Endpoint
         try:
             url_api = f"https://www.instagram.com/api/v1/users/web_profile_info/?username={username}"
-            async with session.get(url_api, headers=FastInstagramScraper.HEADERS, timeout=aiohttp.ClientTimeout(total=6)) as res:
+            async with session.get(url_api, headers=FastInstagramScraper.HEADERS, timeout=aiohttp.ClientTimeout(total=5)) as res:
                 if res.status == 200:
                     data = await res.json()
                     user = data.get("data", {}).get("user")
@@ -188,10 +211,9 @@ class FastInstagramScraper:
         except Exception:
             pass
 
-        # 2. Meta Tags Extraction Engine
         try:
             url_web = f"https://www.instagram.com/{username}/"
-            async with session.get(url_web, headers=FastInstagramScraper.WEB_HEADERS, timeout=aiohttp.ClientTimeout(total=6)) as res:
+            async with session.get(url_web, headers=FastInstagramScraper.WEB_HEADERS, timeout=aiohttp.ClientTimeout(total=5)) as res:
                 text = await res.text()
                 if res.status == 404 or "Page Not Found" in text or "isn't available" in text:
                     return {"alive": False, "username": username}
@@ -236,7 +258,7 @@ class FastInstagramScraper:
             pass
         return None
 
-# ----------------- DISCORD BOT SETUP -----------------
+# ----------------- BOT CORE -----------------
 class MonitorBot(commands.Bot):
     def __init__(self):
         intents = discord.Intents.default()
@@ -256,16 +278,24 @@ def format_elapsed(seconds: float) -> str:
     rem_secs = secs % 60
     return f"{mins} minutes, {rem_secs} seconds"
 
-# ----------------- BACKGROUND MONITOR LOOP -----------------
-@tasks.loop(seconds=3)
+# ----------------- HIGH-PERFORMANCE BACKGROUND WORKER -----------------
+@tasks.loop(seconds=2)
 async def check_loop():
     targets = db.get_all()
     if not targets:
         return
 
+    now = time.time()
     async with aiohttp.ClientSession() as session:
         for item in targets:
             try:
+                # Dynamic interval check
+                elapsed_raw = now - item["start_time"]
+                target_delay = item["target_delay"]
+
+                if elapsed_raw < target_delay:
+                    continue
+
                 channel = bot.get_channel(item["channel_id"])
                 if not channel:
                     channel = await bot.fetch_channel(item["channel_id"])
@@ -275,7 +305,7 @@ async def check_loop():
                 target = item["target"]
                 t_type = item["target_type"]
                 alert_on = item["alert_type"]
-                elapsed = format_elapsed(time.time() - item["start_time"])
+                elapsed_str = format_elapsed(elapsed_raw)
 
                 if t_type == "account":
                     data = await FastInstagramScraper.fetch_account(session, target)
@@ -288,7 +318,7 @@ async def check_loop():
                             description=(
                                 f"[Instagram Account Recovered | @{target}\n🏆✅]({data['url']})\n"
                                 f"Followers: {data['followers']}\n"
-                                f"⏱️ Elapsed Time: {elapsed}"
+                                f"⏱️ Elapsed Time: {elapsed_str}"
                             ),
                             color=discord.Color.from_rgb(46, 204, 113)
                         )
@@ -298,8 +328,7 @@ async def check_loop():
                             file = discord.File(card, filename="card.png")
                             embed.set_image(url="attachment://card.png")
                             await channel.send(embed=embed, file=file)
-                        except Exception as e:
-                            logger.error(f"Image Send error: {e}")
+                        except Exception:
                             await channel.send(embed=embed)
 
                         db.remove_monitor(item["id"])
@@ -309,7 +338,7 @@ async def check_loop():
                             title="Monitoring Status",
                             description=(
                                 f"⚠️ **Instagram Account Suspended / Banned** | `@{target}`\n"
-                                f"⏱️ Elapsed Time: {elapsed}"
+                                f"⏱️ Elapsed Time: {elapsed_str}"
                             ),
                             color=discord.Color.from_rgb(231, 76, 60)
                         )
@@ -324,14 +353,14 @@ async def check_loop():
                     if alert_on == "unban" and p_data["alive"]:
                         embed = discord.Embed(
                             title="Monitoring Status",
-                            description=f"🎉 [Instagram Post Restored / Recovered ✅]({p_data['url']})\n⏱️ Elapsed Time: {elapsed}",
+                            description=f"🎉 [Instagram Post Restored / Recovered ✅]({p_data['url']})\n⏱️ Elapsed Time: {elapsed_str}",
                             color=discord.Color.from_rgb(46, 204, 113)
                         )
                         await channel.send(embed=embed)
                         db.remove_monitor(item["id"])
 
             except Exception as err:
-                logger.error(f"Check error: {err}")
+                logger.error(f"Worker Loop Error: {err}")
 
 # ----------------- SLASH COMMANDS -----------------
 @bot.tree.command(name="unban_ig", description="Monitor Instagram account for UNBAN / RECOVERY.")
