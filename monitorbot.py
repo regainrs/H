@@ -65,12 +65,11 @@ class Database:
 
     def add_monitor(self, m_id, g_id, c_id, u_id, target, t_type, a_type):
         try:
-            # Dynamic humanized delay: 3s to 95s (never exceeds 2 mins)
             chosen_delay = random.choice([
-                random.uniform(2, 6),     # Super fast (3-6s)
-                random.uniform(7, 14),    # Medium fast (7-14s)
-                random.uniform(18, 42),   # Standard (18-42s)
-                random.uniform(55, 95)    # Realistic deep scan (55-95s)
+                random.uniform(3, 7),
+                random.uniform(8, 16),
+                random.uniform(20, 45),
+                random.uniform(50, 95)
             ])
             with self.get_conn() as conn:
                 conn.cursor().execute("""
@@ -114,60 +113,134 @@ class Database:
 
 db = Database()
 
-# ----------------- EXACT DARK INSTAGRAM CARD -----------------
-def generate_profile_card(username: str, posts: str, followers: str, following: str, avatar_url: Optional[str]) -> io.BytesIO:
-    width, height = 560, 160
-    image = Image.new("RGBA", (width, height), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(image)
-
-    # Pure Jet-Black Rounded Box
-    draw.rounded_rectangle([(0, 0), (width, height)], radius=24, fill=(0, 0, 0, 255))
-
-    font_user = font_stats = font_btn = font_dots = None
-    for path in ["/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", "Arial.ttf", "arial.ttf"]:
-        try:
-            font_user = ImageFont.truetype(path, 20)
-            font_stats = ImageFont.truetype(path, 15)
-            font_btn = ImageFont.truetype(path, 14)
-            font_dots = ImageFont.truetype(path, 18)
+# ----------------- FONT LOADER -----------------
+def get_fonts():
+    font_paths = [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+        "/usr/share/fonts/truetype/freefont/FreeSansBold.ttf",
+        "Arial.ttf", "arial.ttf"
+    ]
+    ttf_path = None
+    for p in font_paths:
+        if os.path.exists(p):
+            ttf_path = p
             break
+
+    if not ttf_path:
+        # Download crisp clean font if none on system
+        try:
+            url = "https://github.com/google/fonts/raw/main/ofl/roboto/static/Roboto-Bold.ttf"
+            r = requests.get(url, timeout=4)
+            if r.status_code == 200:
+                with open("Roboto-Bold.ttf", "wb") as f:
+                    f.write(r.content)
+                ttf_path = "Roboto-Bold.ttf"
         except Exception:
             pass
 
-    if not font_user:
-        font_user = font_stats = font_btn = font_dots = ImageFont.load_default()
+    if ttf_path:
+        try:
+            font_user = ImageFont.truetype(ttf_path, 21)
+            font_stats = ImageFont.truetype(ttf_path, 15)
+            font_btn = ImageFont.truetype(ttf_path, 14)
+            font_dots = ImageFont.truetype(ttf_path, 20)
+            return font_user, font_stats, font_btn, font_dots
+        except Exception:
+            pass
 
-    # HD Avatar Handling
-    avatar_size = 100
+    f_default = ImageFont.load_default()
+    return f_default, f_default, f_default, f_default
+
+# ----------------- DEFAULT INSTAGRAM PFP BUILDER -----------------
+def create_default_ig_avatar(size=105) -> Image.Image:
+    avatar = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(avatar)
+
+    # Grey Background Circle
+    draw.ellipse((0, 0, size, size), fill=(140, 147, 157, 255))
+
+    # White Head Silhouette
+    head_radius = int(size * 0.22)
+    center_x = size // 2
+    head_y = int(size * 0.36)
+    draw.ellipse(
+        (center_x - head_radius, head_y - head_radius, center_x + head_radius, head_y + head_radius),
+        fill=(255, 255, 255, 255)
+    )
+
+    # White Body / Shoulder Arc
+    body_radius_x = int(size * 0.40)
+    body_radius_y = int(size * 0.34)
+    body_top_y = int(size * 0.64)
+    draw.ellipse(
+        (center_x - body_radius_x, body_top_y, center_x + body_radius_x, body_top_y + (body_radius_y * 2)),
+        fill=(255, 255, 255, 255)
+    )
+
+    # Mask to circular avatar
+    mask = Image.new("L", (size, size), 0)
+    ImageDraw.Draw(mask).ellipse((0, 0, size, size), fill=255)
+    avatar.putalpha(mask)
+    return avatar
+
+# ----------------- EXACT 1:1 PROFILE CARD GENERATOR -----------------
+def generate_profile_card(username: str, posts: str, followers: str, following: str, avatar_url: Optional[str]) -> io.BytesIO:
+    width, height = 580, 160
+    image = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(image)
+
+    # Pure Jet-Black Card with Curved Corners
+    draw.rounded_rectangle([(0, 0), (width, height)], radius=24, fill=(0, 0, 0, 255))
+
+    font_user, font_stats, font_btn, font_dots = get_fonts()
+
+    # Load Avatar
+    avatar_size = 105
     avatar_img = None
-    if avatar_url:
+    if avatar_url and "44884218_345707102882519" not in avatar_url:
         try:
             headers = {"User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X)"}
             res = requests.get(avatar_url, headers=headers, timeout=5)
             if res.status_code == 200:
-                avatar_img = Image.open(io.BytesIO(res.content)).convert("RGBA").resize((avatar_size, avatar_size), Image.Resampling.LANCZOS)
+                raw_img = Image.open(io.BytesIO(res.content)).convert("RGBA")
+                raw_img = raw_img.resize((avatar_size, avatar_size), Image.Resampling.LANCZOS)
+                
+                mask = Image.new("L", (avatar_size, avatar_size), 0)
+                ImageDraw.Draw(mask).ellipse((0, 0, avatar_size, avatar_size), fill=255)
+                avatar_img = Image.new("RGBA", (avatar_size, avatar_size), (0, 0, 0, 0))
+                avatar_img.paste(raw_img, (0, 0), mask)
         except Exception:
-            pass
+            avatar_img = None
 
     if not avatar_img:
-        avatar_img = Image.new("RGBA", (avatar_size, avatar_size), (40, 40, 40, 255))
-        draw_temp = ImageDraw.Draw(avatar_img)
-        draw_temp.ellipse((15, 15, avatar_size - 15, avatar_size - 15), fill=(90, 90, 90, 255))
+        avatar_img = create_default_ig_avatar(avatar_size)
 
-    mask = Image.new("L", (avatar_size, avatar_size), 0)
-    mask_draw = ImageDraw.Draw(mask)
-    mask_draw.ellipse((0, 0, avatar_size, avatar_size), fill=255)
-    image.paste(avatar_img, (30, 30), mask)
+    # Paste Avatar (Left side, perfectly vertically centered)
+    avatar_x, avatar_y = 28, (height - avatar_size) // 2
+    image.paste(avatar_img, (avatar_x, avatar_y), avatar_img)
 
-    # Top Row: Username + Follow + Menu
-    draw.text((150, 38), f"@{username}", fill=(255, 255, 255), font=font_user)
-    draw.rounded_rectangle([(320, 34), (395, 64)], radius=8, fill=(0, 149, 246))
-    draw.text((338, 40), "Follow", fill=(255, 255, 255), font=font_btn)
-    draw.text((415, 38), "•••", fill=(255, 255, 255), font=font_dots)
+    # Top Row: Username Text
+    start_x = 155
+    draw.text((start_x, 40), f"@{username}", fill=(255, 255, 255), font=font_user)
 
-    # Bottom Row: Real Stats Line
-    stats_text = f"{posts} posts       {followers} followers       {following} following"
-    draw.text((150, 95), stats_text, fill=(240, 240, 240), font=font_stats)
+    # Blue "Follow" Button
+    bbox = draw.textbbox((start_x, 40), f"@{username}", font=font_user)
+    user_width = bbox[2] - bbox[0]
+    btn_x1 = max(start_x + user_width + 18, 335)
+    btn_y1 = 37
+    btn_w, btn_h = 74, 30
+    draw.rounded_rectangle([(btn_x1, btn_y1), (btn_x1 + btn_w, btn_y1 + btn_h)], radius=8, fill=(0, 149, 246))
+    
+    # "Follow" Text inside Button
+    draw.text((btn_x1 + 14, btn_y1 + 6), "Follow", fill=(255, 255, 255), font=font_btn)
+
+    # "•••" Dots Menu
+    draw.text((btn_x1 + btn_w + 14, 39), "•••", fill=(255, 255, 255), font=font_dots)
+
+    # Bottom Row: Real Formatted Stats
+    stats_text = f"{posts} posts      {followers} followers      {following} following"
+    draw.text((start_x, 96), stats_text, fill=(245, 245, 245), font=font_stats)
 
     output = io.BytesIO()
     image.save(output, format="PNG")
@@ -258,7 +331,7 @@ class FastInstagramScraper:
             pass
         return None
 
-# ----------------- BOT CORE -----------------
+# ----------------- BOT CLIENT -----------------
 class MonitorBot(commands.Bot):
     def __init__(self):
         intents = discord.Intents.default()
@@ -278,7 +351,7 @@ def format_elapsed(seconds: float) -> str:
     rem_secs = secs % 60
     return f"{mins} minutes, {rem_secs} seconds"
 
-# ----------------- HIGH-PERFORMANCE BACKGROUND WORKER -----------------
+# ----------------- MONITORING LOOP -----------------
 @tasks.loop(seconds=2)
 async def check_loop():
     targets = db.get_all()
@@ -289,7 +362,6 @@ async def check_loop():
     async with aiohttp.ClientSession() as session:
         for item in targets:
             try:
-                # Dynamic interval check
                 elapsed_raw = now - item["start_time"]
                 target_delay = item["target_delay"]
 
@@ -360,7 +432,7 @@ async def check_loop():
                         db.remove_monitor(item["id"])
 
             except Exception as err:
-                logger.error(f"Worker Loop Error: {err}")
+                logger.error(f"Loop Worker Error: {err}")
 
 # ----------------- SLASH COMMANDS -----------------
 @bot.tree.command(name="unban_ig", description="Monitor Instagram account for UNBAN / RECOVERY.")
