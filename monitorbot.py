@@ -313,9 +313,7 @@ async def watch(
     save_accounts(accounts)
 
     await interaction.followup.send(
-        f"👁 Now monitoring **@{username}**.\nChecks every 60 seconds."
-    )
-
+        f"👁 Now monitoring **@{username}**.\n"
         f"Checks every **{CHECK_INTERVAL} seconds**."
     )
 
