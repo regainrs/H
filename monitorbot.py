@@ -2,6 +2,7 @@ import os
 import io
 import re
 import time
+import json
 import asyncio
 import sqlite3
 import logging
@@ -262,7 +263,7 @@ def generate_profile_card(username: str, posts: str, followers: str, following: 
 
 
 # ============================================================
-# 100% UNBLOCKED SCRAPER ENGINE
+# HIGH-PRECISION SCRAPER ENGINE
 # ============================================================
 
 class InstagramSessionScraper:
@@ -273,7 +274,7 @@ class InstagramSessionScraper:
         clean_url = img_url.replace("\\u0026", "&").replace("\\/", "/")
         try:
             proxy_url = f"https://images.weserv.nl/?url={quote(clean_url, safe='')}&w=300&h=300&fit=cover"
-            async with session.get(proxy_url, timeout=aiohttp.ClientTimeout(total=4)) as res:
+            async with session.get(proxy_url, timeout=aiohttp.ClientTimeout(total=5)) as res:
                 if res.status == 200:
                     data = await res.read()
                     if len(data) > 400:
@@ -286,36 +287,58 @@ class InstagramSessionScraper:
     async def fetch_account(cls, session, username):
         username = username.strip().lower().replace("@", "")
 
-        tunnels = [
-            f"https://api.codetabs.com/v1/proxy?quest=https://www.instagram.com/{username}/",
-            f"https://corsproxy.io/?{quote(f'https://www.instagram.com/{username}/')}",
-            f"https://api.allorigins.win/raw?url={quote(f'https://www.instagram.com/{username}/')}"
-        ]
-
+        # Route 1: Direct IG Web API with App ID Header (Fastest & Most Accurate)
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
-            "Accept-Language": "en-US,en;q=0.9"
+            "X-IG-App-ID": "936619743392459",
+            "Accept": "application/json, text/plain, */*",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Sec-Fetch-Site": "same-origin"
         }
 
-        for tunnel_url in tunnels:
+        try:
+            direct_api = f"https://www.instagram.com/api/v1/users/web_profile_info/?username={username}"
+            async with session.get(direct_api, headers=headers, timeout=aiohttp.ClientTimeout(total=5)) as res:
+                if res.status == 200:
+                    data = await res.json()
+                    user_data = data.get("data", {}).get("user")
+                    if user_data:
+                        f_count = str(user_data.get("edge_followed_by", {}).get("count", 0))
+                        fo_count = str(user_data.get("edge_follow", {}).get("count", 0))
+                        p_count = str(user_data.get("edge_owner_to_timeline_media", {}).get("count", 0))
+                        avatar_url = user_data.get("profile_pic_url_hd") or user_data.get("profile_pic_url")
+                        avatar_bytes = await cls.download_image(session, avatar_url)
+                        return {
+                            "alive": True,
+                            "username": username,
+                            "followers": f_count,
+                            "following": fo_count,
+                            "posts": p_count,
+                            "avatar_bytes": avatar_bytes,
+                            "url": f"https://www.instagram.com/{username}/"
+                        }
+                elif res.status == 404:
+                    return {"alive": False, "username": username}
+        except Exception:
+            pass
+
+        # Route 2: Tunnel fallback (AllOrigins / CodeTabs)
+        fallback_urls = [
+            f"https://api.allorigins.win/raw?url={quote(f'https://www.instagram.com/{username}/')}",
+            f"https://api.codetabs.com/v1/proxy?quest=https://www.instagram.com/{username}/"
+        ]
+
+        for tunnel_url in fallback_urls:
             try:
-                async with session.get(tunnel_url, headers=headers, timeout=aiohttp.ClientTimeout(total=4)) as res:
+                async with session.get(tunnel_url, timeout=aiohttp.ClientTimeout(total=6)) as res:
                     if res.status == 200:
                         html = await res.text()
-
                         if f"/{username}/" in html or "instagram.com" in html:
                             match = re.search(r'content="([0-9.,KMBkmb]+)\s+Followers,\s+([0-9.,KMBkmb]+)\s+Following,\s+([0-9.,KMBkmb]+)\s+Posts', html)
-                            if match:
-                                f_count = match.group(1)
-                                fo_count = match.group(2)
-                                p_count = match.group(3)
-                            else:
-                                f_count, fo_count, p_count = "1", "0", "0"
-
+                            f_count, fo_count, p_count = (match.group(1), match.group(2), match.group(3)) if match else ("1", "0", "0")
                             img_match = re.search(r'property="og:image"\s+content="([^"]+)"', html)
                             avatar_url = img_match.group(1) if img_match else None
                             avatar_bytes = await cls.download_image(session, avatar_url)
-
                             return {
                                 "alive": True,
                                 "username": username,
@@ -336,19 +359,17 @@ class InstagramSessionScraper:
     async def fetch_post(cls, session, code):
         code = code.strip()
         url = f"https://www.instagram.com/p/{code}/"
-        tunnels = [
-            f"https://api.codetabs.com/v1/proxy?quest={quote(url)}",
-            f"https://corsproxy.io/?{quote(url)}"
-        ]
-        for tunnel_url in tunnels:
-            try:
-                async with session.get(tunnel_url, timeout=aiohttp.ClientTimeout(total=4)) as res:
-                    if res.status == 200:
-                        return {"alive": True, "url": url}
-                    if res.status in (404, 301, 302):
-                        return {"alive": False, "url": url}
-            except Exception:
-                continue
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
+        }
+        try:
+            async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=5)) as res:
+                if res.status == 200:
+                    return {"alive": True, "url": url}
+                if res.status in (404, 301, 302):
+                    return {"alive": False, "url": url}
+        except Exception:
+            pass
         return None
 
 
@@ -495,7 +516,7 @@ async def test_cmd(interaction: discord.Interaction, username: str):
         description_text = (
             f"[Account Active / Alive | @{data['username']} 🟢]({data['url']})\n"
             f"*Followers: {followers_num}\\ Following: {following_num}*\n"
-            f"⚡ *Tunnel: Active & Unblocked*"
+            f"⚡ *Engine: High-Precision Live*"
         )
 
         embed = discord.Embed(
